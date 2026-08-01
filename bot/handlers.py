@@ -30,7 +30,6 @@ async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
         await asyncio.sleep(2)
 
 
-@router.message(F.text)
 def split_text(text: str, limit: int = 4000) -> list[str]:
     if len(text) <= limit:
         return [text]
@@ -48,6 +47,7 @@ def split_text(text: str, limit: int = 4000) -> list[str]:
     return [chunk for chunk in chunks if chunk]
 
 
+@router.message(F.text)
 async def handle_text(message: Message) -> None:
     try:
         await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
