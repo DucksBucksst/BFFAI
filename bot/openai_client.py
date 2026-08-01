@@ -8,8 +8,6 @@ from bot.prompts import SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-_RAW_LOG_LIMIT = 5
-_raw_logged = 0
 
 
 def _get_dict_value(obj, *keys):
@@ -108,52 +106,17 @@ async def get_ai_response(message: str) -> str:
             model="gpt-5-mini",
             input=message,
             instructions=SYSTEM_PROMPT,
-            max_output_tokens=1200,
+            max_output_tokens=2048,
         )
 
         content = _extract_response_content(response)
         if content:
             return content.strip()
 
-        # If response incomplete due to token limits, attempt one retry with higher limit
-        data = None
-        try:
-            data = response.to_dict() if hasattr(response, "to_dict") else (response if isinstance(response, dict) else None)
-        except Exception:
-            data = None
-
-        incomplete = False
-        prev_id = None
-        if isinstance(data, dict):
-            prev_id = data.get("id")
-            incomplete = bool(data.get("incomplete_details")) or data.get("status") == "incomplete"
-
-        if incomplete and client:
-            try:
-                retry_resp = await client.responses.create(
-                    model="gpt-5-mini",
-                    input=message,
-                    instructions=SYSTEM_PROMPT,
-                    max_output_tokens=2048,
-                    previous_response_id=prev_id,
-                )
-                content = _extract_response_content(retry_resp)
-                if content:
-                    return content.strip()
-                data = retry_resp.to_dict() if hasattr(retry_resp, "to_dict") else None
-            except Exception:
-                pass
-
-        # Log raw response sparingly for debugging
-        global _raw_logged
-        try:
-            if _raw_logged < _RAW_LOG_LIMIT:
-                raw_response = getattr(response, "to_dict", lambda: repr(response))()
-                logger.warning("OpenAI response missing content, falling back to raw response: %s", raw_response)
-                _raw_logged += 1
-        except Exception:
-            logger.warning("OpenAI response missing content (failed to log raw response)")
-
+        logger.warning(
+            "OpenAI response missing content: %s",
+            getattr(response, "to_dict", lambda: repr(response))()[:500],
+        )
         return "Не удалось получить ответ от AI."
     except Exception as exc:  # pragma: no cover - runtime safety
         logger.exception("OpenAI request failed: %s", exc)
