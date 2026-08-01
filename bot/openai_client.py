@@ -22,7 +22,6 @@ async def get_ai_response(message: str) -> str:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": message},
             ],
-            temperature=0.7,
         )
         content = response.choices[0].message.content
         return content.strip() if content else "Не удалось получить ответ от AI."
