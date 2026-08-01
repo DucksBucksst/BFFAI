@@ -43,6 +43,25 @@ def _collect_output_text(obj) -> list[str]:
     return []
 
 
+def _response_to_dict(response) -> dict | None:
+    if isinstance(response, dict):
+        return response
+    if hasattr(response, "to_dict"):
+        try:
+            return response.to_dict()
+        except Exception as e:
+            logger.debug("to_dict() failed: %s", e)
+    return None
+
+
+def _get_response_id(response) -> str | None:
+    if isinstance(response, dict):
+        return response.get("id")
+    if hasattr(response, "id"):
+        return getattr(response, "id")
+    return None
+
+
 def _extract_response_content(response) -> str | None:
     if response is None:
         logger.warning("Response is None")
@@ -85,6 +104,13 @@ def _extract_response_content(response) -> str | None:
         if isinstance(output_text, str) and output_text.strip():
             logger.debug("Extracted from output_text field")
             return output_text.strip()
+
+        # If the response is incomplete, log the id for retry logic
+        if data.get("incomplete_details"):
+            logger.warning("Response incomplete: %s", data.get("incomplete_details"))
+            response_id = _get_response_id(data)
+            if response_id:
+                logger.info("Response id for continuation retry: %s", response_id)
 
         # Older chat.completions-like shape fallback
         content = _get_dict_value(data, "choices", 0, "message", "content")
@@ -149,6 +175,25 @@ async def get_ai_response(message: str) -> str:
         if content and content.strip():
             logger.info("Successfully extracted %d characters from response", len(content))
             return content.strip()
+
+        # Attempt continuation if response is incomplete
+        data = _response_to_dict(response)
+        if data and data.get("incomplete_details"):
+            response_id = _get_response_id(data)
+            if response_id:
+                logger.info("Retrying incomplete response with previous_response_id=%s", response_id)
+                retry_response = await client.responses.create(
+                    model="gpt-5-mini",
+                    input=message,
+                    instructions=SYSTEM_PROMPT,
+                    max_output_tokens=4096,
+                    previous_response_id=response_id,
+                    reasoning={"effort": "medium"},
+                )
+                retry_content = _extract_response_content(retry_response)
+                if retry_content and retry_content.strip():
+                    logger.info("Successfully extracted %d characters from retry response", len(retry_content))
+                    return retry_content.strip()
 
         # No content extracted - log warning and return empty string
         logger.warning("OpenAI response returned but no text content extracted")
