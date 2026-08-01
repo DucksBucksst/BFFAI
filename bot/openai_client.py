@@ -97,28 +97,31 @@ def _extract_response_content(response) -> str | None:
 
 
 async def get_ai_response(message: str) -> str:
+    """Get AI response from OpenAI Responses API.
+    
+    Uses max_output_tokens=4096 to ensure long responses aren't truncated.
+    Returns raw text response to be chunked by handler.
+    """
     if not client:
         logger.error("OpenAI API key is not configured.")
-        return "Произошла ошибка при обращении к AI. Попробуйте позже."
+        return ""
 
     try:
         response = await client.responses.create(
             model="gpt-5-mini",
             input=message,
             instructions=SYSTEM_PROMPT,
-            max_output_tokens=2048,
+            max_output_tokens=4096,
         )
 
         content = _extract_response_content(response)
-        if content:
+        if content and content.strip():
             return content.strip()
 
-        try:
-            resp_str = str(getattr(response, "to_dict", lambda: repr(response))())[:500]
-        except Exception:
-            resp_str = "<unable to serialize response>"
-        logger.warning("OpenAI response missing content: %s", resp_str)
-        return "Не удалось получить ответ от AI."
-    except Exception as exc:  # pragma: no cover - runtime safety
+        # No content extracted - log warning but don't fail
+        logger.warning("OpenAI response empty or missing content")
+        return ""
+        
+    except Exception as exc:
         logger.exception("OpenAI request failed: %s", exc)
-        return "Произошла ошибка при обращении к AI. Попробуйте позже."
+        return ""
