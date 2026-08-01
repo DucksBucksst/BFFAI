@@ -122,10 +122,13 @@ async def handle_text(message: Message) -> None:
 
     try:
         # Get AI response
+        logger.info("Processing message from user: %s...", (message.text or "")[:50])
         response_text = await get_ai_response(message.text or "")
+        logger.info("Got response: %d chars", len(response_text) if response_text else 0)
 
         # Handle empty response
         if not response_text:
+            logger.warning("Empty response from AI, sending error message")
             await message.answer(
                 "Произошла ошибка при обращении к AI. Попробуйте позже.",
                 reply_to_message_id=message.message_id,
@@ -134,7 +137,10 @@ async def handle_text(message: Message) -> None:
 
         # Split response into chunks
         chunks = split_text(response_text)
+        logger.info("Response split into %d chunks", len(chunks))
+        
         if not chunks:
+            logger.warning("No chunks generated, sending error message")
             await message.answer(
                 "Произошла ошибка при обращении к AI. Попробуйте позже.",
                 reply_to_message_id=message.message_id,
@@ -153,6 +159,7 @@ async def handle_text(message: Message) -> None:
                 chunk_text = header + chunk_text
 
             # ALL chunks reply to original message
+            logger.debug("Sending chunk %d/%d", chunk_index, total_chunks)
             await message.answer(
                 chunk_text,
                 reply_to_message_id=message.message_id

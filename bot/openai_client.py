@@ -25,6 +25,7 @@ def _get_dict_value(obj, *keys):
 
 def _extract_response_content(response) -> str | None:
     if response is None:
+        logger.warning("Response is None")
         return None
 
     # Preferred SDK helper: output_text()
@@ -32,9 +33,10 @@ def _extract_response_content(response) -> str | None:
         try:
             text = response.output_text()
             if text:
+                logger.debug("Extracted via output_text()")
                 return text
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("output_text() failed: %s", e)
 
     # Normalize to dict for robust parsing
     data = None
@@ -43,13 +45,16 @@ def _extract_response_content(response) -> str | None:
     elif hasattr(response, "to_dict"):
         try:
             data = response.to_dict()
-        except Exception:
+        except Exception as e:
+            logger.debug("to_dict() failed: %s", e)
             data = None
 
     if isinstance(data, dict):
         # Common Responses API structure: 'output' is a list of items
         # Each item may contain 'content' which is a list of parts, including 'output_text'
         out = data.get("output") or []
+        logger.debug("Output list length: %d", len(out))
+        
         texts: list[str] = []
         for item in out:
             if not isinstance(item, dict):
@@ -66,11 +71,13 @@ def _extract_response_content(response) -> str | None:
                     texts.append(part.get("text"))
 
         if texts:
+            logger.debug("Extracted from output[] list")
             return "\n\n".join(texts)
 
         # Older chat.completions-like shape fallback
         content = _get_dict_value(data, "choices", 0, "message", "content")
         if content:
+            logger.debug("Extracted from choices[] fallback")
             return content
 
     # Final fallback: try attribute-based choices/message parsing
@@ -87,19 +94,26 @@ def _extract_response_content(response) -> str | None:
 
                 if message is not None:
                     if isinstance(message, dict):
-                        return message.get("content") or message.get("text")
+                        content = message.get("content") or message.get("text")
+                        if content:
+                            logger.debug("Extracted from choices attribute fallback")
+                            return content
                     else:
-                        return getattr(message, "content", None)
-    except Exception:
-        pass
+                        content = getattr(message, "content", None)
+                        if content:
+                            logger.debug("Extracted from message attribute")
+                            return content
+    except Exception as e:
+        logger.debug("Attribute parsing failed: %s", e)
 
+    logger.warning("Could not extract content from response: %s", str(data)[:200] if data else "no data")
     return None
 
 
 async def get_ai_response(message: str) -> str:
     """Get AI response from OpenAI Responses API.
     
-    Uses max_output_tokens=4096 to ensure long responses aren't truncated.
+    Uses max_output_tokens=8192 to ensure long responses aren't truncated.
     Returns raw text response to be chunked by handler.
     """
     if not client:
@@ -107,6 +121,8 @@ async def get_ai_response(message: str) -> str:
         return ""
 
     try:
+        logger.debug("Sending request to OpenAI with message: %s...", message[:50])
+        
         response = await client.responses.create(
             model="gpt-5-mini",
             input=message,
@@ -114,12 +130,15 @@ async def get_ai_response(message: str) -> str:
             max_output_tokens=8192,
         )
 
+        logger.debug("OpenAI response received, extracting content...")
         content = _extract_response_content(response)
+        
         if content and content.strip():
+            logger.info("Successfully extracted %d characters from response", len(content))
             return content.strip()
 
-        # No content extracted - log warning but don't fail
-        logger.warning("OpenAI response empty or missing content")
+        # No content extracted - log warning and return empty string
+        logger.warning("OpenAI response returned but no text content extracted")
         return ""
         
     except Exception as exc:
