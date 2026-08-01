@@ -24,65 +24,63 @@ def _get_dict_value(obj, *keys):
 
 
 def _extract_response_content(response) -> str | None:
-    if isinstance(response, dict):
-        choices = response.get("choices", [])
-    else:
-        choices = getattr(response, "choices", None)
-
-    if not choices:
-        if hasattr(response, "to_dict"):
-            response = response.to_dict()
-            choices = response.get("choices", [])
-
-    if not choices:
+    if response is None:
         return None
 
-    choice = choices[0]
-    if isinstance(choice, dict):
-        message = choice.get("message")
-    else:
-        message = getattr(choice, "message", None)
-
-    if message is None and hasattr(choice, "to_dict"):
+    if hasattr(response, "output_text"):
         try:
-            data = choice.to_dict()
-            message = data.get("message")
-        except Exception:
-            message = None
-
-    if message is None:
-        return None
-
-    content = None
-    if isinstance(message, dict):
-        content = message.get("content")
-        if not content:
-            content = message.get("text")
-    else:
-        content = getattr(message, "content", None)
-
-    if not content and hasattr(message, "parsed"):
-        parsed = getattr(message, "parsed")
-        content = str(parsed) if parsed is not None else None
-
-    if not content and isinstance(message, dict):
-        tool_call = message.get("tool_call")
-        if tool_call:
-            content = str(tool_call)
-
-    if not content and hasattr(choice, "to_dict"):
-        try:
-            data = choice.to_dict()
-            content = _get_dict_value(data, "message", "content")
-            if not content:
-                content = _get_dict_value(data, "message", "text")
+            text = response.output_text()
+            if text:
+                return text
         except Exception:
             pass
 
-    if not content and isinstance(message, dict):
-        content = _get_dict_value(message, "content") or _get_dict_value(message, "text")
+    if isinstance(response, dict):
+        content = _get_dict_value(response, "output_text")
+        if content:
+            return content
 
-    return content
+    if hasattr(response, "choices"):
+        try:
+            choices = response.choices
+            if choices:
+                choice = choices[0]
+                message = None
+                if isinstance(choice, dict):
+                    message = choice.get("message")
+                else:
+                    message = getattr(choice, "message", None)
+
+                if message is None and hasattr(choice, "to_dict"):
+                    try:
+                        data = choice.to_dict()
+                        message = data.get("message")
+                    except Exception:
+                        message = None
+
+                if message is not None:
+                    if isinstance(message, dict):
+                        content = message.get("content") or message.get("text")
+                    else:
+                        content = getattr(message, "content", None)
+                        if not content and hasattr(message, "parsed"):
+                            parsed = getattr(message, "parsed")
+                            content = str(parsed) if parsed is not None else None
+
+                    if content:
+                        return content
+        except Exception:
+            pass
+
+    if isinstance(response, dict):
+        content = _get_dict_value(response, "choices", 0, "message", "content")
+        if content:
+            return content
+        content = _get_dict_value(response, "choices", 0, "message", "text")
+        if content:
+            return content
+
+    return None
 
 
 async def get_ai_response(message: str) -> str:
@@ -91,14 +89,13 @@ async def get_ai_response(message: str) -> str:
         return "Произошла ошибка при обращении к AI. Попробуйте позже."
 
     try:
-        response = await client.chat.completions.create(
+        response = await client.responses.create(
             model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message},
-            ],
-            max_completion_tokens=1200,
+            input=message,
+            instructions=SYSTEM_PROMPT,
+            max_output_tokens=1200,
         )
+
         content = _extract_response_content(response)
         if content:
             return content.strip()
