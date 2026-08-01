@@ -9,6 +9,35 @@ from bot.openai_client import get_ai_response
 
 logger = logging.getLogger(__name__)
 router = Router()
+chat_histories: dict[int, list[tuple[str, str]]] = {}
+
+
+def build_user_prompt(message: Message) -> str:
+    history = chat_histories.get(message.chat.id, [])[-6:]
+    prompt_parts: list[str] = []
+
+    if history:
+        prompt_parts.append("Предыдущая беседа:")
+        for role, text in history:
+            prompt_parts.append(f"{role}: {text}")
+        prompt_parts.append("---")
+
+    if message.reply_to_message and message.reply_to_message.text:
+        prompt_parts.append("Предыдущее сообщение, на которое ответили:")
+        prompt_parts.append(message.reply_to_message.text)
+        prompt_parts.append("---")
+
+    prompt_parts.append("Текущий запрос пользователя:")
+    prompt_parts.append(message.text or "")
+
+    return "\n".join(prompt_parts)
+
+
+def save_chat_history(chat_id: int, role: str, text: str) -> None:
+    history = chat_histories.setdefault(chat_id, [])
+    history.append((role, text))
+    if len(history) > 12:
+        del history[: len(history) - 12]
 
 
 @router.message(Command("start"))
@@ -122,8 +151,9 @@ async def handle_text(message: Message) -> None:
 
     try:
         # Get AI response
+        prompt = build_user_prompt(message)
         logger.info("Processing message from user: %s...", (message.text or "")[:50])
-        response_text = await get_ai_response(message.text or "")
+        response_text = await get_ai_response(prompt)
         logger.info("Got response: %d chars", len(response_text) if response_text else 0)
 
         # Handle empty response
@@ -147,15 +177,15 @@ async def handle_text(message: Message) -> None:
             )
             return
 
+        # Save chat history before sending response
+        save_chat_history(message.chat.id, "Пользователь", message.text or "")
+
         # Send chunks with numbering
         total_chunks = len(chunks)
         for chunk_index, chunk_text in enumerate(chunks, 1):
             # Add header for multipart responses
             if total_chunks > 1:
-                if chunk_index == 1:
-                    header = f"📄 Часть {chunk_index}/{total_chunks}\n\n"
-                else:
-                    header = f"📄 Часть {chunk_index}/{total_chunks}\n\n"
+                header = f"📄 Часть {chunk_index}/{total_chunks}\n\n"
                 chunk_text = header + chunk_text
 
             # ALL chunks reply to original message
@@ -165,11 +195,10 @@ async def handle_text(message: Message) -> None:
                 reply_to_message_id=message.message_id
             )
 
-            # Add delay between chunks to avoid spam detection
-            if chunk_index < total_chunks:
-                await asyncio.sleep(0.5)
+        # Save bot response to history
+        save_chat_history(message.chat.id, "Ассистент", response_text)
 
-        # Log result
+        # Add delay between chunks to avoid spam detection
         if total_chunks > 1:
             logger.info(
                 "Response split: %d chars into %d parts",
