@@ -113,10 +113,11 @@ async def get_ai_response(message: str) -> str:
         if content:
             return content.strip()
 
-        logger.warning(
-            "OpenAI response missing content: %s",
-            getattr(response, "to_dict", lambda: repr(response))()[:500],
-        )
+        try:
+            resp_str = str(getattr(response, "to_dict", lambda: repr(response))())[:500]
+        except Exception:
+            resp_str = "<unable to serialize response>"
+        logger.warning("OpenAI response missing content: %s", resp_str)
         return "Не удалось получить ответ от AI."
     except Exception as exc:  # pragma: no cover - runtime safety
         logger.exception("OpenAI request failed: %s", exc)
