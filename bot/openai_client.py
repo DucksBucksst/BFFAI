@@ -111,7 +111,7 @@ async def get_ai_response(message: str) -> str:
             model="gpt-5-mini",
             input=message,
             instructions=SYSTEM_PROMPT,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
         )
 
         content = _extract_response_content(response)
