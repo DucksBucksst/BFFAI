@@ -31,6 +31,23 @@ async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
 
 
 @router.message(F.text)
+def split_text(text: str, limit: int = 4000) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + limit, len(text))
+        if end < len(text):
+            newline = text.rfind("\n", start, end)
+            if newline != -1 and newline > start:
+                end = newline + 1
+        chunks.append(text[start:end].strip())
+        start = end
+    return [chunk for chunk in chunks if chunk]
+
+
 async def handle_text(message: Message) -> None:
     try:
         await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -44,7 +61,18 @@ async def handle_text(message: Message) -> None:
 
     try:
         response = await get_ai_response(message.text or "")
-        await message.answer(response, reply_to_message_id=message.message_id)
+        chunks = split_text(response)
+        if not chunks:
+            await message.answer(
+                "Не удалось получить ответ от AI.",
+                reply_to_message_id=message.message_id,
+            )
+        else:
+            for index, chunk in enumerate(chunks):
+                if index == 0:
+                    await message.answer(chunk, reply_to_message_id=message.message_id)
+                else:
+                    await message.answer(chunk)
     except Exception as exc:  # pragma: no cover - runtime safety
         logger.exception("Telegram message handling failed: %s", exc)
         await message.answer(
