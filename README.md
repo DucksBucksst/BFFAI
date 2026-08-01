@@ -36,6 +36,8 @@
    ```env
    BOT_TOKEN=your_telegram_bot_token
    OPENAI_API_KEY=your_openai_api_key
+   WEBHOOK_URL=https://your-railway-app.up.railway.app
+   PORT=8000
    ```
 4. Запустите бота:
    ```bash
@@ -49,6 +51,8 @@
 3. Укажите переменные окружения:
    - BOT_TOKEN
    - OPENAI_API_KEY
+   - WEBHOOK_URL=https://bffai-production.up.railway.app
+   - PORT=8000
 4. Railway автоматически использует Dockerfile и запустит команду:
    ```bash
    python bot/main.py

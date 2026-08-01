@@ -30,33 +30,35 @@ async def handle_webhook(request: web.Request) -> web.Response:
 async def main() -> None:
     token = BOT_TOKEN or get_required_env("BOT_TOKEN")
     webhook_url = os.getenv("WEBHOOK_URL", "").strip()
-    use_webhook = bool(webhook_url)
+    port = int(os.getenv("PORT", "8000"))
+
+    if not webhook_url:
+        raise RuntimeError("WEBHOOK_URL must be set for webhook mode.")
 
     bot = Bot(token=token)
     dp = Dispatcher()
     register_handlers(dp)
 
-    if use_webhook:
-        app = web.Application()
-        app["bot"] = bot
-        app["dispatcher"] = dp
-        app.router.add_post("/webhook", handle_webhook)
+    app = web.Application()
+    app["bot"] = bot
+    app["dispatcher"] = dp
+    app.router.add_post("/webhook", handle_webhook)
 
-        await bot.set_webhook(f"{webhook_url}/webhook")
+    await bot.set_webhook(f"{webhook_url}/webhook")
 
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
-        await site.start()
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
 
-        logging.info("Webhook server started on %s", os.getenv("PORT", "8000"))
+    logging.info("Webhook server started on port %s", port)
+
+    try:
         while True:
             await asyncio.sleep(3600)
-    else:
-        try:
-            await dp.start_polling(bot)
-        finally:
-            await bot.session.close()
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
