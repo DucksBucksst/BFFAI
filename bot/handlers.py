@@ -26,12 +26,17 @@ async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
         try:
             await bot.send_chat_action(chat_id=chat_id, action="typing")
         except Exception:
-            pass
-        await asyncio.sleep(4)
+            logger.debug("Failed to send typing action", exc_info=True)
+        await asyncio.sleep(2)
 
 
 @router.message(F.text)
 async def handle_text(message: Message) -> None:
+    try:
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    except Exception:
+        logger.debug("Initial typing action failed", exc_info=True)
+
     stop_event = asyncio.Event()
     typing_task = asyncio.create_task(
         _keep_typing(message.bot, message.chat.id, stop_event)
