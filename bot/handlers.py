@@ -152,20 +152,15 @@ async def handle_text(message: Message) -> None:
                     header = f"📄 Часть {chunk_index}/{total_chunks}\n\n"
                 chunk_text = header + chunk_text
 
-            # Send chunk
-            if chunk_index == 1:
-                # First chunk - reply to original message
-                await message.answer(
-                    chunk_text,
-                    reply_to_message_id=message.message_id
-                )
-            else:
-                # Subsequent chunks - standalone messages
-                await message.answer(chunk_text)
+            # ALL chunks reply to original message
+            await message.answer(
+                chunk_text,
+                reply_to_message_id=message.message_id
+            )
 
-                # Add delay between chunks to avoid spam detection
-                if chunk_index < total_chunks:
-                    await asyncio.sleep(0.5)
+            # Add delay between chunks to avoid spam detection
+            if chunk_index < total_chunks:
+                await asyncio.sleep(0.5)
 
         # Log result
         if total_chunks > 1:
