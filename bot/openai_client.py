@@ -23,22 +23,23 @@ def _get_dict_value(obj, *keys):
     return current
 
 
-def _collect_text_values(obj) -> list[str]:
-    if isinstance(obj, str):
-        return [obj]
+def _collect_output_text(obj) -> list[str]:
     if isinstance(obj, dict):
+        if obj.get("type") == "output_text" and isinstance(obj.get("text"), str):
+            return [obj["text"]]
+
         texts: list[str] = []
         for key, value in obj.items():
-            if key == "text" and isinstance(value, str):
-                texts.append(value)
-            else:
-                texts.extend(_collect_text_values(value))
+            if key in {"output", "content", "items", "message"}:
+                texts.extend(_collect_output_text(value))
         return texts
+
     if isinstance(obj, list):
         texts: list[str] = []
         for item in obj:
-            texts.extend(_collect_text_values(item))
+            texts.extend(_collect_output_text(item))
         return texts
+
     return []
 
 
@@ -74,9 +75,9 @@ def _extract_response_content(response) -> str | None:
         logger.debug("Response data keys: %s", list(data.keys()))
         logger.debug("Output list length: %d", len(out))
 
-        texts = _collect_text_values(out)
+        texts = _collect_output_text(out)
         if texts:
-            logger.debug("Extracted text values from output list")
+            logger.debug("Extracted output_text values from output list")
             return "\n\n".join(texts)
 
         # Some Responses items may include top-level output_text
