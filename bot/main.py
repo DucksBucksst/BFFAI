@@ -23,7 +23,10 @@ async def handle_webhook(request: web.Request) -> web.Response:
     dispatcher = request.app["dispatcher"]
     payload = await request.json()
     update = Update(**payload)
-    await dispatcher.feed_webhook_update(bot, update)
+
+    # Process the incoming update in the background and return immediately.
+    # This avoids Telegram webhook timeout when AI response takes longer than 60 seconds.
+    asyncio.create_task(dispatcher.feed_webhook_update(bot, update))
     return web.Response(text="OK")
 
 

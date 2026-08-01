@@ -23,6 +23,25 @@ def _get_dict_value(obj, *keys):
     return current
 
 
+def _collect_text_values(obj) -> list[str]:
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        texts: list[str] = []
+        for key, value in obj.items():
+            if key == "text" and isinstance(value, str):
+                texts.append(value)
+            else:
+                texts.extend(_collect_text_values(value))
+        return texts
+    if isinstance(obj, list):
+        texts: list[str] = []
+        for item in obj:
+            texts.extend(_collect_text_values(item))
+        return texts
+    return []
+
+
 def _extract_response_content(response) -> str | None:
     if response is None:
         logger.warning("Response is None")
@@ -51,28 +70,20 @@ def _extract_response_content(response) -> str | None:
 
     if isinstance(data, dict):
         # Common Responses API structure: 'output' is a list of items
-        # Each item may contain 'content' which is a list of parts, including 'output_text'
         out = data.get("output") or []
+        logger.debug("Response data keys: %s", list(data.keys()))
         logger.debug("Output list length: %d", len(out))
-        
-        texts: list[str] = []
-        for item in out:
-            if not isinstance(item, dict):
-                continue
-            content_list = item.get("content") or []
-            for part in content_list:
-                if not isinstance(part, dict):
-                    continue
-                # Prefer explicit output_text parts
-                if part.get("type") == "output_text" and part.get("text"):
-                    texts.append(part.get("text"))
-                # Fallback to generic text field
-                elif part.get("text"):
-                    texts.append(part.get("text"))
 
+        texts = _collect_text_values(out)
         if texts:
-            logger.debug("Extracted from output[] list")
+            logger.debug("Extracted text values from output list")
             return "\n\n".join(texts)
+
+        # Some Responses items may include top-level output_text
+        output_text = data.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            logger.debug("Extracted from output_text field")
+            return output_text.strip()
 
         # Older chat.completions-like shape fallback
         content = _get_dict_value(data, "choices", 0, "message", "content")
@@ -106,7 +117,7 @@ def _extract_response_content(response) -> str | None:
     except Exception as e:
         logger.debug("Attribute parsing failed: %s", e)
 
-    logger.warning("Could not extract content from response: %s", str(data)[:200] if data else "no data")
+    logger.warning("Could not extract content from response: %s", str(data)[:400] if data else "no data")
     return None
 
 
@@ -128,6 +139,7 @@ async def get_ai_response(message: str) -> str:
             input=message,
             instructions=SYSTEM_PROMPT,
             max_output_tokens=8192,
+            reasoning={"effort": "medium"},
         )
 
         logger.debug("OpenAI response received, extracting content...")
