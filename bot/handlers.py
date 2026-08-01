@@ -39,10 +39,13 @@ async def handle_text(message: Message) -> None:
 
     try:
         response = await get_ai_response(message.text or "")
-        await message.answer(response)
+        await message.answer(response, reply_to_message_id=message.message_id)
     except Exception as exc:  # pragma: no cover - runtime safety
         logger.exception("Telegram message handling failed: %s", exc)
-        await message.answer("Произошла ошибка при обращении к AI. Попробуйте позже.")
+        await message.answer(
+            "Произошла ошибка при обращении к AI. Попробуйте позже.",
+            reply_to_message_id=message.message_id,
+        )
     finally:
         stop_event.set()
         await typing_task
